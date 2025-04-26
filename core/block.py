@@ -13,6 +13,3 @@ class Block:
     def compute_hash(self):
         block_string = json.dumps(self.__dict__, sort_keys=True)
         return hashlib.sha256(block_string.encode()).hexdigest()
-
-    def __repr__(self):
-        return f"Block(index={self.index}, hash={self.compute_hash()})"

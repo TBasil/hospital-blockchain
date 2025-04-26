@@ -20,8 +20,8 @@ class HealthcareBlockchain:
     def last_block(self) -> Block:
         return self.chain[-1]
 
-    def add_transaction(self, transaction: MedicalTransaction) -> int:
-        self.current_transactions.append(transaction.to_dict())
+    def add_transaction(self, transaction: Dict) -> int:
+        self.current_transactions.append(transaction)
         return self.last_block.index + 1
 
     def mine_block(self) -> Block:

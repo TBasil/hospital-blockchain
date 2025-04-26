@@ -1,104 +1,38 @@
 from flask import Flask, request, jsonify
 from core.blockchain import HealthcareBlockchain
-from core.transaction import MedicalTransaction 
-from utils.crypto import generate_keys
+from core.transaction import MedicalTransaction
 import threading
 import time
-import requests  # Added for node communication
+import requests
 
 app = Flask(__name__)
 blockchain = HealthcareBlockchain()
 
-# Home endpoint
 @app.route('/')
 def home():
-    return """
-    Hospital Blockchain Node API<br><br>
-    Endpoints:<br>
-    - GET /chain : View full blockchain<br>
-    - POST /transactions/new : Add new transaction<br>
-    - GET /mine : Mine new block<br>
-    - POST /nodes/register : Register new nodes<br>
-    - GET /nodes/resolve : Resolve chain conflicts<br>
-    """
+    return "Hospital Blockchain Node - Use endpoints: /transactions/new, /mine, /chain, /nodes/register, /nodes/resolve"
 
-# Node registration endpoint
-@app.route('/nodes/register', methods=['POST'])
-def register_nodes():
-    values = request.get_json()
-    
-    if not values or 'nodes' not in values:
-        return "Error: Please supply a valid list of nodes", 400
-    
-    nodes = values['nodes']
-    if not isinstance(nodes, list):
-        return "Error: Nodes must be a list", 400
-    
-    for node in nodes:
-        blockchain.nodes.add(node)
-    
-    response = {
-        'message': 'New nodes have been added',
-        'total_nodes': list(blockchain.nodes)
-    }
-    return jsonify(response), 201
-
-# Chain resolution endpoint
-@app.route('/nodes/resolve', methods=['GET'])
-def consensus():
-    replaced = resolve_conflicts()
-    
-    response = {
-        'message': 'Our chain is authoritative',
-        'chain': [block.__dict__ for block in blockchain.chain]
-    }
-    
-    if replaced:
-        response['message'] = 'Our chain was replaced'
-    
-    return jsonify(response), 200
-
-def resolve_conflicts():
-    """Consensus algorithm to resolve conflicts"""
-    longest_chain = None
-    max_length = len(blockchain.chain)
-
-    for node in blockchain.nodes:
-        try:
-            response = requests.get(f'{node}/chain', timeout=5)
-            if response.status_code == 200:
-                length = response.json()['length']
-                chain = response.json()['chain']
-                
-                if length > max_length and blockchain.validate_chain(chain):
-                    max_length = length
-                    longest_chain = chain
-        except requests.exceptions.RequestException:
-            continue
-    
-    if longest_chain:
-        blockchain.chain = longest_chain
-        return True
-    return False
-
-# Your existing endpoints
 @app.route('/transactions/new', methods=['POST'])
 def new_transaction():
-    values = request.get_json()
-    required = ['patient_id', 'doctor_id', 'record_type', 'data']
-    if not all(k in values for k in required):
-        return "Missing values", 400
+    try:
+        values = request.get_json()
+        required = ['patient_id', 'doctor_id', 'record_type', 'data']
+        if not all(k in values for k in required):
+            return jsonify({'error': 'Missing required fields'}), 400
+            
+        transaction = MedicalTransaction(
+            patient_id=values['patient_id'],
+            doctor_id=values['doctor_id'],
+            record_type=values['record_type'],
+            data=values['data'],
+            signature=values.get('signature', '')
+        )
         
-    transaction = MedicalTransaction(
-        values['patient_id'],
-        values['doctor_id'],
-        values['record_type'],
-        values['data'],
-        signature=values.get('signature')
-    )
-    
-    index = blockchain.add_transaction(transaction)
-    return jsonify({'message': f'Transaction added to Block {index}'}), 201
+        index = blockchain.add_transaction(transaction.to_dict())
+        return jsonify({'message': f'Transaction added to Block {index}'}), 201
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/mine', methods=['GET'])
 def mine():
@@ -122,6 +56,48 @@ def full_chain():
     }
     return jsonify(response), 200
 
+@app.route('/nodes/register', methods=['POST'])
+def register_nodes():
+    values = request.get_json()
+    if not values or 'nodes' not in values:
+        return "Error: Please supply a valid list of nodes", 400
+    
+    for node in values['nodes']:
+        blockchain.nodes.add(node)
+    
+    return jsonify({
+        'message': 'New nodes have been added',
+        'total_nodes': list(blockchain.nodes)
+    }), 201
+
+@app.route('/nodes/resolve', methods=['GET'])
+def consensus():
+    longest_chain = None
+    max_length = len(blockchain.chain)
+
+    for node in blockchain.nodes:
+        try:
+            response = requests.get(f'{node}/chain')
+            if response.status_code == 200:
+                length = response.json()['length']
+                chain = response.json()['chain']
+                if length > max_length:
+                    max_length = length
+                    longest_chain = chain
+        except:
+            continue
+
+    if longest_chain:
+        blockchain.chain = longest_chain
+        return jsonify({
+            'message': 'Chain was replaced',
+            'new_chain': blockchain.chain
+        }), 200
+    return jsonify({
+        'message': 'Chain is authoritative',
+        'chain': blockchain.chain
+    }), 200
+
 def start_miner():
     while True:
         time.sleep(10)
@@ -133,10 +109,8 @@ if __name__ == '__main__':
     miner_thread.daemon = True
     miner_thread.start()
     
-    # Get port from command line or use default 5000
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('-p', '--port', default=5000, type=int, help='port to listen on')
+    parser.add_argument('-p', '--port', default=5000, type=int)
     args = parser.parse_args()
-    
-    app.run(host='0.0.0.0', port=args.port)
+    app.run(host='0.0.0.0', port=args.port, debug=True)

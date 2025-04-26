@@ -14,6 +14,8 @@ class MedicalTransaction:
     def __post_init__(self):
         if self.timestamp is None:
             self.timestamp = time()
+        if not isinstance(self.data, dict):
+            raise ValueError("Data must be a dictionary")
 
     def to_dict(self):
         return {
